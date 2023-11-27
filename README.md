@@ -74,7 +74,7 @@ The LAB environment is structured to showcase the seamless workflow, allowing fo
     - One virtual machine acts as the domain controller for the Active Directory, simulating the server that receives the renewed digital certificate at the conclusion of the workflow.
     - Another virtual machine serves as the Public Key Infrastructure (PKI), running the Microsoft Certificate Services configured as the Enterprise Root Certification Authority (CA). The CA is set up with a certificate template issuing certificates with a 5-day validity, tailored for continuous activation within the demo environment.
     
-    > [!NOTE]
+> [!NOTE]
 > The CA virtual machine is configured also as an SMTP server to allow for email communication in this demo environment.
 
 1. **Key Components:**
