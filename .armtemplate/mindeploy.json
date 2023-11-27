@@ -1,0 +1,283 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "KeyVaultName": {
+            "metadata": {
+                "description": "UNIQUE name of the Key Vault resource"
+            },
+            "type": "String"
+        },
+
+        "EventGridName": {
+            "metadata": {
+                "description": "UNIQUE name of the Event Grid resource"
+            },
+            "type": "String"
+        },
+        "AutomationAccountName": {
+            "metadata": {
+                "description": "Name of the Automation Account resource"
+            },
+            "type": "String"
+        },
+        "webhookName": {
+            "metadata": {
+                "description": "Name of the Webhook resource"
+            },
+            "type": "String",
+            "defaultValue": "clc-webhook"
+        },
+        "WorkerGroupName": {
+            "metadata": {
+                "description": "Name of the Hybrid Runbook Worker Group"
+            },
+            "defaultValue": "EnterpriseCA",
+            "type": "string"
+        },
+
+        "CaServer": {
+            "metadata": {
+                "description": "Certification Authority server FQDN"
+            },
+            "defaultValue": "",
+            "type": "String"
+        },
+
+        "SMTPServer": {
+            "metadata": {
+                "description": "SMTP server IP address or FQDN"
+            },
+            "defaultValue": "",
+            "type": "String"
+        },
+
+
+        "WebhookExpiryTime": {
+            "type": "string",
+            "defaultValue": "[dateTimeAdd(utcNow('u'), 'P1Y')]",
+            "metadata": {
+                "description": "The expiry time for the webhook. Default is 365 days from now."
+            }
+        },
+
+        "_CurrentDateTimeInTicks": {
+            "metadata": {
+                "description": "Current date time in ticks used for unique variables"
+            },
+            "type": "string",
+            "defaultValue": "[utcNow('yyyy-MM-dd')]"
+        }
+    
+    },
+    "variables": {
+        "UniqueStringBasedOnTimeStamp": "[uniqueString(deployment().name, parameters('_CurrentDateTimeInTicks'))]",
+        "Location": "[resourceGroup().location]"
+    },
+    "resources": [
+        
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "apiVersion": "2023-02-01",
+            "name": "[parameters('KeyvaultName')]",
+            "location": "[variables('location')]",
+            "dependsOn": [],
+            "properties": {
+                "sku": {
+                    "family": "A",
+                    "name": "Standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "accessPolicies": [],
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": true,
+                "enabledForTemplateDeployment": false,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enableRbacAuthorization": true,
+                "vaultUri": "[concat(concat('https://',parameters('KeyvaultName')),'.vault.azure.net/')]",
+                "publicNetworkAccess": "Enabled"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts",
+            "apiVersion": "2022-08-08",
+            "name": "[parameters('AutomationAccountName')]",
+            "location": "[variables('location')]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "publicNetworkAccess": true,
+                "disableLocalAuth": false,
+                "sku": {
+                    "name": "Basic"
+                },
+                "encryption": {
+                    "keySource": "Microsoft.Automation",
+                    "identity": {}
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/modules",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('AutomationAccountName'), '/PSPKI')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "contentLink": {
+                    "uri": "https://devopsgallerystorage.blob.core.windows.net:443/packages/pspki.4.0.0.nupkg"
+                }
+            }
+        },        
+        
+        {
+            "name": "[concat(parameters('AutomationAccountName'),'/',parameters('WorkerGroupName'))]",
+            "type": "Microsoft.Automation/automationAccounts/hybridRunbookWorkerGroups",
+            "apiVersion": "2022-08-08",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/runbooks",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('AutomationAccountName'), '/CertLifeCycleMgmt')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "runbookType": "PowerShell",
+                "logVerbose": false,
+                "logProgress": false,
+                "logActivityTrace": 0,
+                "description": "Certificate Lifecycle Management",
+                 "publishContentLink": {
+                    "uri": "https://raw.githubusercontent.com/fabmas/certlc/main/.runbook/runbook_v2a.ps1",
+                    "version": "2.1.0.0"
+                }
+            }
+        },     
+
+        {  
+            "type": "Microsoft.Automation/automationAccounts/webhooks",  
+            "apiVersion": "2015-10-31",  
+            "name": "[concat(parameters('AutomationAccountName'), '/', parameters('webhookName'))]", 
+            "dependsOn": [  
+                "[parameters('automationAccountName')]",
+                "[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('AutomationAccountName'), 'CertLifeCycleMgmt')]"
+            ],  
+            "properties": {  
+                "isEnabled": true,  
+                "expiryTime": "[parameters('WebhookExpiryTime')]",  
+                "runbook": {  
+                    "name": "CertLifeCycleMgmt"  
+                },
+                "runOn": "[parameters('WorkerGroupName')]"
+            }  
+        } ,  
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/SMTPServer')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',parameters('SMTPServer'),'\"')]",
+                "description": "The IP Address or FQDN of the SMTP Server to send email notifications"
+            }
+        },        
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/CAServer')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',parameters('CaServer'),'\"')]",
+                "description": "The FQDN of the Certification Authority Server"
+            }
+        },        
+
+        {
+            "type": "Microsoft.EventGrid/systemTopics",
+            "apiVersion": "2023-06-01-preview",
+            "name": "[parameters('EventGridName')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]"
+            ],
+            "properties": {
+                "source": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "topicType": "microsoft.keyvault.vaults"
+            }
+        },
+
+        {
+            "type": "Microsoft.EventGrid/systemTopics/eventSubscriptions",
+            "apiVersion": "2023-06-01-preview",
+            "name": "[concat(parameters('EventGridName'), '/CertLC')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.EventGrid/systemTopics', parameters('EventGridName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts/webhooks', parameters('AutomationAccountName'), parameters('webhookName'))]"
+            ],
+            "properties": {
+                "destination": {
+                    "properties": {
+                        "maxEventsPerBatch": 1,
+                        "preferredBatchSizeInKilobytes": 64,
+                        "endpointUrl": "[reference(parameters('webhookName')).uri]"
+                    },
+                    "endpointType": "WebHook"
+                },
+                "filter": {
+                    "includedEventTypes": [
+                        "Microsoft.KeyVault.CertificateNearExpiry"
+                    ]
+                },
+                "eventDeliverySchema": "EventGridSchema",
+                "retryPolicy": {
+                    "maxDeliveryAttempts": 30,
+                    "eventTimeToLiveInMinutes": 1440
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-CertificateOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'a4417e6f-fecd-4de8-b567-7b0420556985')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        }   
+
+    ],
+    "outputs": {
+        "webhookuri": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', parameters('AutomationAccountName'), parameters('webhookName'))).uri]"
+        }
+    }
+}

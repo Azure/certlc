@@ -1,0 +1,874 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "virtualNetworkAddressRange": {
+            "type": "string",
+            "defaultValue": "10.0.0.0/16",
+            "metadata": {
+                "description": "Virtual network address range."
+            }
+        },
+        "virtualNetworkName": {
+            "type": "string",
+            "defaultValue": "ad-vnet",
+            "metadata": {
+                "description": "The name of the virtualNetwork."
+            }
+        },
+        "subnetName": {
+            "type": "string",
+            "defaultValue": "ad-vnet-subnet",
+            "metadata": {
+                "description": "The name of the subnet."
+            }
+        },
+        "subnetRange": {
+            "type": "string",
+            "defaultValue": "10.0.0.0/24",
+            "metadata": {
+                "description": "Subnet IP range."
+            }
+        },        
+        "DomainName": {
+            "type": "string",
+            "defaultValue": "demo.com",
+            "metadata": {
+                "description": "The FQDN of the Active Directory Domain to be created"
+            }
+        },
+        "DomainAdminUserName": {
+            "type": "string",
+            "defaultValue": "demoadmin",
+            "metadata": {
+                "description": "The name of the administrator account of the new VM and domain"
+            }
+        },
+        "DomainAdminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "The password for the administrator account of the new VM and domain"
+            }
+        },
+
+        "DcVmSize": {
+            "type": "string",
+            "defaultValue": "Standard_D2s_v3",
+            "metadata": {
+                "description": "Size of the VM for the Domain Controller"
+            }
+        },
+        "DcVmName": {
+            "type": "string",
+            "defaultValue": "dc01",
+            "metadata": {
+                "description": "Domain Controller VM name."
+            }
+        },        
+        "DcPrivateIpAddress": {
+            "type": "string",
+            "defaultValue": "10.0.0.4",
+            "metadata": {
+                "description": "Private IP address of the Domain Controller."
+            }
+        },
+
+        "CaVmSize": {
+            "type": "string",
+            "defaultValue": "Standard_D2s_v3",
+            "metadata": {
+                "description": "Size of VM"
+            }
+        },
+
+
+        "CaVmName": {
+            "type": "string",
+            "defaultValue": "ca01",
+            "metadata": {
+                "description": "Certificate Service VM name."
+            }
+            },        
+        "CaAdminUsername": {
+            "type": "string",
+            "defaultValue": "caadmin",
+            "metadata": {
+                "description": "The name of the administrator of the Certificate Service VM."
+            }
+        },
+        "CaAdminPassword": {
+            "type": "secureString",
+            "metadata": {
+                "description": "The password for the administrator account of the Certificate Service VM."
+            }
+        },
+        "KeyVaultName": {
+            "metadata": {
+                "description": "UNIQUE name of the Key Vault resource"
+            },
+            "type": "String",
+            "defaultValue": "DEMO-KV-<UNIQUESTRING>"
+        },
+
+        "EventGridName": {
+            "metadata": {
+                "description": "UNIQUE name of the Event Grid resource"
+            },
+            "type": "String",
+            "defaultValue": "DEMO-EG-<UNIQUESTRING>"
+        },
+        "AutomationAccountName": {
+            "metadata": {
+                "description": "Name of the Automation Account resource"
+            },
+            "type": "String",
+            "defaultValue": "DEMO-AA-<UNIQUESTRING>"
+        },
+        "webhookName": {
+            "metadata": {
+                "description": "Name of the Webhook resource"
+            },
+            "type": "String",
+            "defaultValue": "clc-webhook"
+        },
+        "WorkerGroupName": {
+            "metadata": {
+                "description": "Name of the Hybrid Runbook Worker Group"
+            },
+            "defaultValue": "EnterpriseRootCA",
+            "type": "string"
+        },
+
+        "Recipient": {
+            "metadata": {
+                "description": "Email address of the recipient of the certificate expiration notification"
+            },
+            "type": "String",
+            "defaultValue": "john.doe@demo.com"
+        },
+
+
+        "WebhookExpiryTime": {
+            "type": "string",
+            "defaultValue": "[dateTimeAdd(utcNow('u'), 'P1Y')]",
+            "metadata": {
+                "description": "The expiry time for the webhook. Default is 365 days from now."
+            }
+        },
+
+        "_CurrentDateTimeInTicks": {
+            "metadata": {
+                "description": "Current date time in ticks used for unique variables"
+            },
+            "type": "string",
+            "defaultValue": "[utcNow('yyyy-MM-dd')]"
+        }
+    
+    },
+    "variables": {
+        "UniqueStringBasedOnTimeStamp": "[uniqueString(deployment().name, parameters('_CurrentDateTimeInTicks'))]",
+        "DCnicName": "[concat(parameters('DCvmName'),'-nic')]",
+        "DCpublicIPAddressName": "[concat(parameters('DCvmName'),'-ip')]",
+        "CAnicName": "[concat(parameters('CAvmName'),'-nic')]",
+        "Location": "[resourceGroup().location]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2022-01-01",
+            "name": "[variables('DCpublicIPAddressName')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "publicIPAllocationMethod": "Static"
+                }
+        },
+
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "VNet",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[uri(deployment().properties.templateLink.uri,'nestedtemplates/vnet.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "virtualNetworkName": {
+                        "value": "[parameters('virtualNetworkName')]"
+                    },
+                    "virtualNetworkAddressRange": {
+                        "value": "[parameters('virtualNetworkAddressRange')]"
+                    },
+                    "subnetName": {
+                        "value": "[parameters('subnetName')]"
+                    },
+                    "subnetRange": {
+                        "value": "[parameters('subnetRange')]"
+                    },
+                    "location": {
+                        "value": "[variables('location')]"
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2022-01-01",
+            "name": "[variables('DCnicName')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "VNet"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Static",
+                            "privateIPAddress": "[parameters('DCprivateIPAddress')]",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]"
+                            },
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('DCpublicIPAddressName'))]",
+                                "properties": {
+                                    "deleteOption": "Delete"
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+                
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "name": "[parameters('DCvmName')]",
+            "location": "[variables('location')]",
+            "identity": {
+                "type": "SystemAssigned"
+            },            
+            "dependsOn": [
+                "[variables('DCnicName')]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('DCvmSize')]"
+                },
+                "osProfile": {
+                    "computerName": "[parameters('DCvmName')]",
+                    "adminUsername": "[parameters('DomainAdminUsername')]",
+                    "adminPassword": "[parameters('DomainAdminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2022-Datacenter",
+                        "version": "latest"  
+                    },
+                    "osDisk": {
+                        "name": "[concat(parameters('DCvmName'),'_OSDisk')]",
+                        "caching": "ReadOnly",
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "StandardSSD_LRS"
+                        }
+                    },
+                    "dataDisks": [
+                        {
+                            "name": "[concat(parameters('DCvmName'), '_DataDisk')]",
+                            "caching": "ReadWrite",
+                            "createOption": "Empty",
+                            "diskSizeGB": 20,
+                            "managedDisk": {
+                                "storageAccountType": "StandardSSD_LRS"
+                            },
+                            "lun": 0
+                        }
+                    ]
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('DCnicName'))]"
+                        }
+                    ]
+                }
+            },
+            "resources": [
+                {
+                    "type": "extensions",
+                    "apiVersion": "2022-03-01",
+                    "name": "CreateADForest",
+                    "location": "[variables('location')]",
+                    "dependsOn": [
+                        "[parameters('DCvmName')]"
+                    ],
+                    "properties": {
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": true,
+                        "settings": {
+                            "ModulesUrl": "[uri(deployment().properties.templateLink.uri, 'DSC/CreateADPDC.zip')]",
+                            "ConfigurationFunction": "CreateADPDC.ps1\\CreateADPDC",
+                            "Properties": {
+                                "DomainName": "[parameters('DomainName')]",
+                                "AdminCreds": {
+                                    "UserName": "[parameters('DomainAdminUsername')]",
+                                    "Password": "PrivateSettingsRef:AdminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "Items": {
+                                "AdminPassword": "[parameters('DomainAdminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "UpdateVNetDNS",
+            "dependsOn": [
+                "CreateADForest"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[uri(deployment().properties.templateLink.uri, 'nestedtemplates/vnet.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "virtualNetworkName": {
+                        "value": "[parameters('virtualNetworkName')]"
+                    },
+                    "virtualNetworkAddressRange": {
+                        "value": "[parameters('virtualNetworkAddressRange')]"
+                    },
+                    "subnetName": {
+                        "value": "[parameters('subnetName')]"
+                    },
+                    "subnetRange": {
+                        "value": "[parameters('subnetRange')]"
+                    },
+                    "DNSServerAddress": {
+                        "value": [
+                            "[parameters('DCprivateIPAddress')]"
+                        ]
+                    },
+                    "location": {
+                        "value": "[variables('location')]"
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2021-02-01",
+            "name": "[variables('CAnicName')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "VNet",
+                "[variables('DCnicName')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                        "privateIPAllocationMethod": "Dynamic",
+                        "subnet": {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]"
+                        }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "name": "[parameters('CAvmName')]",
+            "location": "[variables('location')]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "hardwareProfile": {
+                "vmSize": "[parameters('CAvmSize')]"
+                },
+                "osProfile": {
+                "computerName": "[parameters('CAvmName')]",
+                "adminUsername": "[parameters('CAadminUsername')]",
+                "adminPassword": "[parameters('CAadminPassword')]"
+                },
+                "storageProfile": {
+                "imageReference": {
+                    "publisher": "MicrosoftWindowsServer",
+                    "offer": "WindowsServer",
+                    "sku": "2022-Datacenter",
+                    "version": "latest"  
+                },
+                "osDisk": {
+                    "name": "[format('{0}-OsDisk', parameters('CAvmName'))]",
+                    "caching": "ReadWrite",
+                    "createOption": "FromImage"
+                },
+                "dataDisks": [
+                    {
+                    "name": "[format('{0}-DataDisk', parameters('CAvmName'))]",
+                    "caching": "None",
+                    "createOption": "Empty",
+                    "diskSizeGB": 127,
+                    "lun": 0
+                    }
+                ]
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                        "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('CAnicName'))]"
+                        }
+                    ]
+                }
+            },
+            "licenseType": "Windows_Server",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('CAnicName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('DCvmName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('DCvmName'), 'CreateADForest')]",
+                "[resourceId('Microsoft.Resources/deployments', 'UpdateVNetDNS')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2021-03-01",
+            "name": "[format('{0}/{1}', parameters('CAvmName'), 'joindomain')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "publisher": "Microsoft.Compute",
+                "type": "JsonADDomainExtension",
+                "typeHandlerVersion": "1.3",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                "name": "[parameters('domainName')]",
+                "ouPath": "",
+                "user": "[format('{0}\\{1}', parameters('domainName'), parameters('DomainAdminUsername'))]",
+                "restart": true,
+                "options": "3"
+                },
+                "protectedSettings": {
+                "Password": "[parameters('DomainAdminPassword')]"
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2022-03-01",
+            "name": "[concat(parameters('CAvmName'), '/ExecuteScript')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('CAvmName'), 'joindomain')]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Powershell",
+                "type": "DSC",
+                "typeHandlerVersion": "2.19",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "ModulesUrl": "[uri(deployment().properties.templateLink.uri, 'DSC/ExecuteScript.zip')]",
+                    "ConfigurationFunction": "ExecuteScript.ps1\\ExecuteScript",
+                    "Properties": {
+                        "DomainName": "[parameters('DomainName')]",
+                        "AdminCreds": {
+                            "UserName": "[parameters('DomainAdminUsername')]",
+                            "Password": "PrivateSettingsRef:AdminPassword"
+                        },
+                        "DCvmName": "[parameters('DCvmName')]",
+                        "CAvmName": "[parameters('CAvmName')]",
+                        "CAName": "DEMOCA",
+                        "CDPURL": "[concat('http://',parameters('CAvmName'),'.',parameters('DomainName'))]",
+                        "WebenrollURL": "[concat('http://',parameters('CAvmName'),'.',parameters('DomainName'))]",
+                        "demoCertDNSName": "[concat('democert.',parameters('DomainName'))]",
+                        "keyvaultName": "[parameters('KeyvaultName')]",
+                        "Recipient": "[parameters('Recipient')]"
+                    }
+                },
+                "protectedSettings": {
+                    "Items": {
+                        "AdminPassword": "[parameters('DomainAdminPassword')]"
+                    }
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "apiVersion": "2023-02-01",
+            "name": "[parameters('KeyvaultName')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "VNet"
+            ],
+            "properties": {
+                "sku": {
+                    "family": "A",
+                    "name": "Standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "accessPolicies": [],
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": true,
+                "enabledForTemplateDeployment": false,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enableRbacAuthorization": true,
+                "vaultUri": "[concat(concat('https://',parameters('KeyvaultName')),'.vault.azure.net/')]",
+                "publicNetworkAccess": "Enabled"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts",
+            "apiVersion": "2022-08-08",
+            "name": "[parameters('AutomationAccountName')]",
+            "location": "[variables('location')]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "publicNetworkAccess": true,
+                "disableLocalAuth": false,
+                "sku": {
+                    "name": "Basic"
+                },
+                "encryption": {
+                    "keySource": "Microsoft.Automation",
+                    "identity": {}
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/modules",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('AutomationAccountName'), '/PSPKI')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "contentLink": {
+                    "uri": "https://devopsgallerystorage.blob.core.windows.net:443/packages/pspki.4.0.0.nupkg"
+                }
+            }
+        },        
+        
+        {
+            "name": "[concat(parameters('AutomationAccountName'),'/',parameters('WorkerGroupName'))]",
+            "type": "Microsoft.Automation/automationAccounts/hybridRunbookWorkerGroups",
+            "apiVersion": "2022-08-08",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+            }
+        },
+
+        {
+            "name": "[concat(parameters('AutomationAccountName'), '/',parameters('WorkerGroupName'),'/',guid('demohw', variables('UniqueStringBasedOnTimeStamp')))]",
+            "type": "Microsoft.Automation/automationAccounts/hybridRunbookWorkerGroups/hybridRunbookWorkers",
+            "apiVersion": "2022-08-08",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts/hybridRunbookWorkerGroups', parameters('AutomationAccountName'),parameters('WorkerGroupName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]"
+            ],
+            "properties": {
+                "vmResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/runbooks",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('AutomationAccountName'), '/CertLifeCycleMgmt')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]"
+            ],
+            "properties": {
+                "runbookType": "PowerShell",
+                "logVerbose": false,
+                "logProgress": false,
+                "logActivityTrace": 0,
+                "description": "Certificate Lifecycle Management",
+                 "publishContentLink": {
+                    "uri": "https://raw.githubusercontent.com/fabmas/certlc/main/.runbook/runbook_v2a.ps1",
+                    "version": "2.1.0.0"
+                }
+            }
+        },     
+
+        {  
+            "type": "Microsoft.Automation/automationAccounts/webhooks",  
+            "apiVersion": "2015-10-31",  
+            "name": "[concat(parameters('AutomationAccountName'), '/', parameters('webhookName'))]", 
+            "dependsOn": [  
+                "[parameters('automationAccountName')]",
+                "[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('AutomationAccountName'), 'CertLifeCycleMgmt')]"
+            ],  
+            "properties": {  
+                "isEnabled": true,  
+                "expiryTime": "[parameters('WebhookExpiryTime')]",  
+                "runbook": {  
+                    "name": "CertLifeCycleMgmt"  
+                },
+                "runOn": "[parameters('WorkerGroupName')]"
+            }  
+        } ,  
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/SMTPServer')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"','localhost','\"')]",
+                "description": "The name of the SMTP Server to send email notifications"
+            }
+        },        
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/CAServer')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',parameters('CaVmName'),'\"')]",
+                "description": "The name of the Certification Authority Server"
+            }
+        },     
+
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(parameters('CAvmName'),'/HybridWorkerExtension')]",
+            "apiVersion": "2022-03-01",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('CAvmName'), 'ExecuteScript')]"
+            ],
+
+            "properties": {
+                "publisher": "Microsoft.Azure.Automation.HybridWorker",
+                "type": "HybridWorkerForWindows",
+                "typeHandlerVersion": "1.1",
+                "autoUpgradeMinorVersion": true,
+                "enableAutomaticUpgrade": true,
+                "settings": {
+                "AutomationAccountURL": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))).AutomationHybridServiceUrl]"
+                
+                }
+            }
+        },
+
+
+
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name":  "[concat(parameters('DCvmName'),'/KeyVaultForWindows')]",
+            "apiVersion": "2022-08-01",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('DCvmName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('CAvmName'), 'HybridWorkerExtension')]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Azure.KeyVault",
+                "type": "KeyVaultForWindows",
+                "typeHandlerVersion": "3.0",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "secretsManagementSettings": {
+                        "pollingIntervalInS": "60",
+                        "linkOnRenewal": false,
+                        "observedCertificates": 
+                        [
+                            {
+                                "url":"[concat('https://',parameters('KeyvaultName'),'.vault.azure.net:443/secrets/democert')]",
+                                "certificateStoreName": "MY",
+                                "certificateStoreLocation": "LocalMachine",
+                                "keyExportable": true,
+                                "accounts": [
+                                    "Network Service",
+                                    "Local Service"
+                                ]
+                            }
+                        ]          
+                    }
+                }
+            }
+        },
+
+         {
+            "type": "Microsoft.EventGrid/systemTopics",
+            "apiVersion": "2023-06-01-preview",
+            "name": "[parameters('EventGridName')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]"
+            ],
+            "properties": {
+                "source": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "topicType": "microsoft.keyvault.vaults"
+            }
+        },
+
+        {
+            "type": "Microsoft.EventGrid/systemTopics/eventSubscriptions",
+            "apiVersion": "2023-06-01-preview",
+            "name": "[concat(parameters('EventGridName'), '/CertLC')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.EventGrid/systemTopics', parameters('EventGridName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts/webhooks', parameters('AutomationAccountName'), parameters('webhookName'))]"
+            ],
+            "properties": {
+                "destination": {
+                    "properties": {
+                        "maxEventsPerBatch": 1,
+                        "preferredBatchSizeInKilobytes": 64,
+                        "endpointUrl": "[reference(parameters('webhookName')).uri]"
+                    },
+                    "endpointType": "WebHook"
+                },
+                "filter": {
+                    "includedEventTypes": [
+                        "Microsoft.KeyVault.CertificateNearExpiry"
+                    ]
+                },
+                "eventDeliverySchema": "EventGridSchema",
+                "retryPolicy": {
+                    "maxDeliveryAttempts": 30,
+                    "eventTimeToLiveInMinutes": 1440
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-CertificateOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'a4417e6f-fecd-4de8-b567-7b0420556985')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('CA-CryptoOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '14b46e9e-c2b7-41b4-b07b-48a6ebf60603')]",
+                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName')), '2023-03-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('CA-CertificateOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'a4417e6f-fecd-4de8-b567-7b0420556985')]",
+                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('CAvmName')), '2023-03-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },        
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('DC-SecretUsersOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('DCvmName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '4633458b-17de-408a-b874-0445c86b69e6')]",
+                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('DCvmName')), '2023-03-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        }        
+
+    ],
+    "outputs": {
+        "dnsIpAddress": {
+            "type": "string",
+            "value": "[parameters('DCprivateIPAddress')]"
+        },
+        "domainName": {
+            "type": "string",
+            "value": "[parameters('DomainName')]"
+        },
+        "virtualNetworkSubscriptionId": {
+            "type": "string",
+            "value": "[subscription().subscriptionId]"
+        },
+        "virtualNetworkResourceGroupName": {
+            "type": "string",
+            "value": "[resourceGroup().name]"
+        },
+        "virtualNetworkName": {
+            "type": "string",
+            "value": "[parameters('virtualNetworkName')]"
+        },
+        "virtualNetworkSubnetName": {
+            "type": "string",
+            "value": "[parameters('subnetName')]"
+        },
+        "virtualNetworkAddressPrefixes": {
+            "type": "string",
+            "value": "[parameters('virtualNetworkAddressRange')]"
+        },
+        "webhookuri": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', parameters('AutomationAccountName'), parameters('webhookName'))).uri]"
+        }
+    }
+}
