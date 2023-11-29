@@ -9,7 +9,6 @@ write-output "start"
 write-output $WebhookData
 try {
     if ($WebhookData) {
-        $body = (ConvertFrom-Json -InputObject $WebhookData)
         $body = $WebhookData
 
         # VARIABLE FROM WEBHOOK QUERY
