@@ -74,8 +74,8 @@ The LAB environment is structured to showcase the seamless workflow, allowing fo
     - One virtual machine acts as the domain controller for the Active Directory, simulating the server that receives the renewed digital certificate at the conclusion of the workflow.
     - Another virtual machine serves as the Public Key Infrastructure (PKI), running the Microsoft Certificate Services configured as the Enterprise Root Certification Authority (CA). The CA is set up with a certificate template issuing certificates with a 5-day validity, tailored for continuous activation within the demo environment.
     
-> [!NOTE]
-> The CA virtual machine is configured also as an SMTP server to allow for email communication in this demo environment.
+    > [!NOTE]
+    > The CA virtual machine is configured also as an SMTP server to allow for email communication in this demo environment.
 
 1. **Key Components:**
 
@@ -97,15 +97,15 @@ The LAB environment is structured to showcase the seamless workflow, allowing fo
     - Connects to the CA, requests a certificate with the previously obtained CSR, and presents it within the Key Vault to conclude the renewal process.
     - Sends emails to the identified recipients.
 
-> [!NOTE]
-> The RunBook performs the actions described above on Azure, using the System Managed Identity of the automation account, and inside the Certification Authority, using the system account (domain computer account) of the CA server.  To access the Azure Key Vault, the System Managed Identity of the automation account has been granted the "*Key Vault Certificate Officer*" role on the Key Vault.
+    > [!NOTE]
+    > The RunBook performs the actions described above on Azure, using the System Managed Identity of the automation account, and inside the Certification Authority, using the system account (domain computer account) of the CA server.  To access the Azure Key Vault, the System Managed Identity of the automation account has been granted the "*Key Vault Certificate Officer*" role on the Key Vault.
 
 
 1. **Certificate Retrieval:**
     The DC01, configured as the server expecting the renewed certificate via the Key Vault extension, receives the certificate in its machine's personal certificate store after the polling period elapses.
 
-> [!NOTE]
-> To access the Azure Key Vault, the System Managed Identity of the DC01 virtual machine has been granted the "*Key Vault Secret User*" role on the Key Vault. 
+    > [!NOTE]
+    > To access the Azure Key Vault, the System Managed Identity of the DC01 virtual machine has been granted the "*Key Vault Secret User*" role on the Key Vault. 
 
 1. **Conclusion of the Demo:**
     At this stage, the demonstration concludes successfully.
@@ -128,8 +128,8 @@ The LAB is fully automated and requires no manual intervention. The following st
 
     ![Screenshot Key Vault](./.diagrams/cert_creation.png)
 
-> [!NOTE]
->  To access the certificate section you need at least the "Key Vault Certificate Officer" role on the Key Vault.
+    > [!NOTE]
+    >  To access the certificate section you need at least the "Key Vault Certificate Officer" role on the Key Vault.
     
 
 1. **Certificate Near Expiration**
