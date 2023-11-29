@@ -118,7 +118,7 @@ configuration ExecuteScript
             TestScript      = { return $false }
             SetScript       = {
 
-                # create a local folder named c:\temp\script and copy the "https://raw.githubusercontent.com/azure/certlc/main/.scripts/InstallEntRootCA.ps1" file into it
+                # create a local folder named c:\temp\script and copy the "https://raw.githubusercontent.com/Azure/certlc/main/.scripts/InstallEntRootCA.ps1" file into it
                 $ScriptFolder="c:\temp\script"
                 New-Item -Path $ScriptFolder -ItemType Directory -Force |Out-Null
                 $ScriptName="InstallEntRootCA.ps1"
