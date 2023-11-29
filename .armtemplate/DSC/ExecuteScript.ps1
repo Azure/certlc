@@ -127,7 +127,7 @@ configuration ExecuteScript
                 Invoke-WebRequest -uri $ScriptURL -OutFile $ScriptPath
 
                 #Copy the utility to view the .eml file
-                Invoke-WebRequest -uri "https://raw.githubusercontent.com/azure/certlc/main/DemoTools/MailViewer.ps1" -OutFile "$ScriptFolder\Mailviewer.ps1"
+                Invoke-WebRequest -uri "https://raw.githubusercontent.com/Azure/certlc/main/DemoTools/MailViewer.ps1" -OutFile "$ScriptFolder\Mailviewer.ps1"
 
                 #add link to default desktop
                 $desktopPath = 'C:\Users\Public\Desktop'
