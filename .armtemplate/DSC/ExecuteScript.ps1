@@ -123,7 +123,7 @@ configuration ExecuteScript
                 New-Item -Path $ScriptFolder -ItemType Directory -Force |Out-Null
                 $ScriptName="InstallEntRootCA.ps1"
                 $ScriptPath="$ScriptFolder\$ScriptName"
-                $ScriptURL="https://raw.githubusercontent.com/azure/certlc/main/.scripts/InstallEntRootCA.ps1"
+                $ScriptURL="https://raw.githubusercontent.com/Azure/certlc/main/.scripts/InstallEntRootCA.ps1"
                 Invoke-WebRequest -uri $ScriptURL -OutFile $ScriptPath
 
                 #Copy the utility to view the .eml file
