@@ -161,7 +161,7 @@
                 "logActivityTrace": 0,
                 "description": "Certificate Lifecycle Management",
                  "publishContentLink": {
-                    "uri": "https://raw.githubusercontent.com/azure/certlc/main/.runbook/runbook_v2a.ps1",
+                    "uri": "https://raw.githubusercontent.com/Azure/certlc/main/.runbook/runbook_v2a.ps1",
                     "version": "2.1.0.0"
                 }
             }
