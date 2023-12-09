@@ -1,5 +1,5 @@
 ---
-description: This template deploys the LAB environment for the 'Certificate Life Cycle on Azure' scenario.
+description: This template deploys the LAB environment for the 'Certificate Lifecycle on Azure' scenario.
 page_type: sample
 products:
 - azure
@@ -9,8 +9,8 @@ languages:
 - json
 ---
 
-# Certificate Life Cycle LAB Deployment
-In this tutorial, you will learn how to deploy the LAB environment for the **Certificate Life Cycle on Azure** scenario. The goal is to showcase a comprehensive solution for the automated renewal of certificates issued by non-integrated Certificate Authorities.
+# Certificate Lifecycle LAB Deployment
+In this tutorial, you will learn how to deploy the LAB environment for the **Certificate Lifecycle on Azure** scenario. The goal is to showcase a comprehensive solution for the automated renewal of certificates issued by non-integrated Certificate Authorities.
 
 [![Deploy To Azure](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazure.svg?sanitize=true)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2Fcertlc%2Fmain%2F.armtemplate%2Ffulllabdeploy.json)
 
@@ -66,7 +66,7 @@ The LAB environment is designed to represent an in-depth technical overview of a
 
 The LAB environment is structured to showcase the seamless workflow, allowing for a complete demonstration of the automated certificate management process. Let's delve into the key components, shown in the diagram below, constituting this environment:
 
-![LAB Cert Life Cycle Architecture](./.diagrams/LAB_certlc_Architecture.jpg)
+![LAB Cert Lifecycle Architecture](./.diagrams/LAB_certlc_Architecture.jpg)
 
 1. **Virtual Network and Machines:**
 
@@ -114,7 +114,7 @@ The LAB environment is structured to showcase the seamless workflow, allowing fo
 1. **Real-World Implementation:**
     In a real-world scenario, an additional step is required to bind the certificate to the respective service (e.g., binding the certificate to IIS for a web certificate).
 
-## Executing the Certificate Life Cycle in the LAB environment
+## Executing the Certificate Lifecycle in the LAB environment
 The LAB is fully automated and requires no manual intervention. The following steps are provided to verify the whole process and to showcase the seamless workflow.
 
 1. **LAB environment deployment:**
