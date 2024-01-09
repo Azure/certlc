@@ -131,6 +131,10 @@ try {
             Write-Error "Error importing certificate to Key Vault: $_"
             throw
         }
+        
+        # Delete $tempFile 
+        Remove-item -Path $tempFile  -Force
+        Write-Output "Removed temporary file $tempFile" 
 
         if ($null -ne $Recipient) {
             $tag =  @{recipient = $Recipient}
