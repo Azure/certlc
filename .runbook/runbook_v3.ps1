@@ -41,12 +41,14 @@ function certlcworkflow {
             $IssuerName = $cert.Certificate.Issuer
             $Recipient = $cert.Tags.recipient
         } catch {
-            Write-Error "Error getting certificate from Key Vault: $_"
+            Write-Output "Error getting certificate from Key Vault"
+            Write-Error "Error getting certificate from Key Vault"
+            throw "Error getting certificate from Key Vault"
             $continue = $false
         }
         
         if ($cert -eq $null) {
-            
+            Write-Output "Error getting certificate from Key Vault $VaultName"           
             Write-Error "Error getting certificate from Key Vault $VaultName"
             throw "Error getting certificate from Key Vault: $VaultName"
             
@@ -63,12 +65,12 @@ function certlcworkflow {
                 $temp = $cert.Certificate.Extensions | ?{$_.Oid.Value -eq "1.3.6.1.4.1.311.21.7"}
             }
             $temp = $temp.Format(0)
-            write-output "temp = $temp"      
+ 
             $oid=$null
             $substring = $temp -match '\((.*?)\)' | Out-Null
             if ($matches -ne $null -and $matches.Count -gt 0) {
                 $oid = $matches[1]
-                write-output "OID1 = $oid"
+                write-output "OID = $oid"
             } 
 
             if ($oid -eq $null) {
@@ -76,25 +78,34 @@ function certlcworkflow {
                 $template = $split[0]
                 $templateSplit = $template -split "="
                 $oid = $templateSplit[1]
-                write-output "OID2 = $oid"
+                write-output "OID = $oid"
             }        
             
             if ($oid -eq $null) {
                 $pattern = 'Template=([\d.]+)'
                 if ($temp -match $pattern) {
                     $oid = $matches[1]
-                    write-output "OID3 = $oid"
+                    write-output "OID = $oid"
                 } 
             }
 
-            # Generate CSR in Key Vault
-            try {
-                $Policy = New-AzKeyVaultCertificatePolicy -SecretContentType "application/x-pkcs12" -SubjectName $SubjectName -IssuerName "Unknown" -ReuseKeyOnRenewal
-                $result = Add-AzKeyVaultCertificate -VaultName $VaultName -Name $ObjectName -CertificatePolicy $Policy
-                $CSR = $result.CertificateSigningRequest
-            } catch {
-                Write-Error "Error generating CSR in Key Vault: $_"
-                $continue = $false
+            # Check if exisiting CSR is present
+            $result = Get-AzKeyVaultCertificateOperation -VaultName $VaultName -Name $ObjectName | where {$_.Status -eq "inProgress"}
+            $CSR = $result.CertificateSigningRequest
+
+
+            if ($CSR -eq $null) {
+                # Generate CSR in Key Vault
+                try {
+                    $Policy = New-AzKeyVaultCertificatePolicy -SecretContentType "application/x-pkcs12" -SubjectName $SubjectName -IssuerName "Unknown" -ReuseKeyOnRenewal
+                    $result = Add-AzKeyVaultCertificate -VaultName $VaultName -Name $ObjectName -CertificatePolicy $Policy
+                    $CSR = $result.CertificateSigningRequest
+                } catch {
+                    Write-Output "Error generating CSR in Key Vault"
+                    Write-Error "Error generating CSR in Key Vault"
+                    throw "Error generating CSR in Key Vault"
+                    $continue = $false
+                }
             }
         }
 
@@ -104,6 +115,8 @@ function certlcworkflow {
             ########################
             Write-Output "Internal CA commands"
 
+            $CAServer = Get-AutomationVariable -Name 'CAServer'
+
             # Create a temporary file
             $tempFile = [System.IO.Path]::GetTempFileName()
             # Write the CSR content to the temporary file
@@ -111,16 +124,19 @@ function certlcworkflow {
 
             # Issue the Certificate from the PKI
             try {
-                $certificateRequest = Submit-CertificateRequest -CA localhost -Path $tempFile -Attribute "CertificateTemplate:$($oid)"
+                $CA = Get-CertificationAuthority -ComputerName $CAServer
+                $certificateRequest = Submit-CertificateRequest -CA $CA -Path $tempFile -Attribute "CertificateTemplate:$($oid)"
                 $certificate = $certificateRequest.Certificate
             } catch {
-                Write-Error "Error issuing certificate from PKI: $_"
+                Write-Output "Error issuing certificate from PKI"
+                Write-Error "Error issuing certificate from PKI"
+                throw "Error issuing certificate from PKI"
                 $continue = $false
             }
         }
 
         if ($continue) {
-            Write-Output "Submit-CertificateRequest -CA localhost -Path $tempFile -Attribute ""CertificateTemplate:$($oid)"""
+            Write-Output "Submit-CertificateRequest -CA $CAServer -Path $tempFile -Attribute ""CertificateTemplate:$($oid)"""
             Write-Output $certificateRequest
             Write-Output $certificate
 
@@ -137,7 +153,9 @@ function certlcworkflow {
             
                 $newCert = Import-AzKeyVaultCertificate -VaultName $VaultName -Name $ObjectName -FilePath $tempFile 
             } catch {
-                Write-Error "Error importing certificate to Key Vault: $_"
+                Write-Output "Error importing certificate to Key Vault"
+                Write-Error "Error importing certificate to Key Vault"
+                throw "Error importing certificate to Key Vault"
                 $continue = $false
             }
         }
@@ -193,7 +211,9 @@ function certlcworkflow {
                     Send-MailMessage -To $EmailTo -From $EmailFrom -Subject $EmailSubject -Body $EmailBody -BodyAsHtml -SmtpServer $SmtpServer
 
                 } catch {
-                    Write-Error "Error sending email notification: $_"
+                    Write-Output "Error sending email notification"
+                    Write-Error "Error sending email notification"
+                    throw  "Error importing certificate to Key Vault"
                 }
             }
  
@@ -202,8 +222,9 @@ function certlcworkflow {
             try {
                 $queue.CloudQueue.DeleteMessage($queuedMessage.Result.Id,$queuedMessage.Result.popReceipt)    
             }catch {
-                Write-Error ("Error deleting the message (" + $queuedMessage.Result.Id + ") from the queue")
                 write-output ("Error deleting the message (" + $queuedMessage.Result.Id + ") from the queue")
+                Write-Error ("Error deleting the message (" + $queuedMessage.Result.Id + ") from the queue")
+                throw "Error importing certificate to Key Vault"
             }
 
         }
@@ -214,67 +235,85 @@ function certlcworkflow {
 
 # END FUNCTIONS SECTION #
 
-$continue = $true
-$ErrorActionPreference = "Stop" 
+$environmentVariable = Get-ChildItem env:
+$HybridWorker = ($environmentVariable | Where-Object { $_.name -like 'Fabric_*' } ).count -eq 0
 
-write-output "start"
+$ErrorActionPreference = "Continue"  # Display any error message and attempt to continue execution of subsequence commands.
 
-# Connect to Azure
-write-output "Connect to Azure"
-try {
-    Connect-AzAccount -Identity
-} catch {
-    Write-Error "Error connecting to Azure: $_"
-    write-output "Error connecting to Azure"
-    $continue = $false
-}
+#Check Wether the script is running on Azure or on Hybrid Worker
+if ($HybridWorker ) {   
+    Write-Output "Running on Hybrid Worker"
 
-if ($continue) {
-    #Get Storage Account Queue Context
-    $storageAccountName = Get-AutomationVariable -Name 'StorageAccount'
-    $resourceGroup= Get-AutomationVariable -Name 'resourceGroup'
+    $continue = $true
 
-    #$storageAccountName = "famascicertclcsa" #TODO: Comment this row and enable the previous : ONLY FOR DEBUG 
-    #$resourceGroup= "CERTLC" #TODO: Comment this row and enable the previous : ONLY FOR DEBUG 
-
-    $queueName = "certlc"
-
+    # Connect to Azure
+    write-output "Connect to Azure"
     try {
-        $storageAccount = get-AzStorageAccount -ResourceGroupName $resourceGroup  -Name $storageAccountName 
-        $ctx = $storageAccount.Context
+        Connect-AzAccount -Identity
     } catch {
-        Write-Error "Error getting storage account"
-        write-output "Error getting storage account"
+        write-output "Error connecting to Azure"
+        Write-Error "Error connecting to Azure"
+        throw "Error connecting to Azure"
         $continue = $false
     }
-}
-if ($continue) {
-    # wait before checking the queue
-    Start-Sleep -Seconds 5
 
-    # Retrieve the queue
-    try {
-        $queue = Get-AzStorageQueue -Name $queueName -Context $ctx
-    } catch {
-        Write-Error "Error getting the queue"
-        write-output "Error getting the queue"
-        $continue = $false
+    if ($continue) {
+        #Get Storage Account Queue Context
+        $storageAccountName = Get-AutomationVariable -Name 'StorageAccount'
+        $resourceGroup= Get-AutomationVariable -Name 'resourceGroup'
+
+        #$storageAccountName = "famascicertclcsa" #TODO: Comment this row and enable the previous : ONLY FOR DEBUG 
+        #$resourceGroup= "CERTLC" #TODO: Comment this row and enable the previous : ONLY FOR DEBUG 
+
+        $queueName = "certlc"
+
+        try {
+            $storageAccount = get-AzStorageAccount -ResourceGroupName $resourceGroup  -Name $storageAccountName 
+            $ctx = $storageAccount.Context
+        } catch {
+            write-output "Error getting storage account"
+            Write-Error "Error getting storage account"
+            throw "Error getting storage account"
+            $continue = $false
+        }
     }
-}
-if ($continue) {
-    $invisibleTimeout = [System.TimeSpan]::FromSeconds(1)
-    write-output ("Queued messages " + $queue.ApproximateMessageCount)
+    if ($continue) {
+        # wait before checking the queue
+        Start-Sleep -Seconds 5
 
-    for ($i = 1; $i -le $queue.ApproximateMessageCount; $i++ ) {
-        $queuedMessage = $queue.CloudQueue.GetMessageAsync($invisibleTimeout,$null,$null)
-        write-output $queuedMessage 
-        $WebhookData = $queuedMessage.Result.AsString
-
-        write-output ("WebhookData " + $WebhookData)
-
-        certlcworkflow -WebhookData $WebhookData, -queuedMessage $queuedMessage
+        # Retrieve the queue
+        try {
+            $queue = Get-AzStorageQueue -Name $queueName -Context $ctx
+        } catch {
+            write-output "Error getting the queue"
+            Write-Error "Error getting the queue"
+            throw "Error getting the queue"
+            $continue = $false
+        }
     }
+    if ($continue) {
+        $invisibleTimeout = [System.TimeSpan]::FromSeconds(1)
+        write-output ("Queued messages " + $queue.ApproximateMessageCount)
+
+        for ($i = 1; $i -le $queue.ApproximateMessageCount; $i++ ) {
+            $queuedMessage = $queue.CloudQueue.GetMessageAsync($invisibleTimeout,$null,$null)
+            write-output $queuedMessage 
+            $WebhookData = $queuedMessage.Result.AsString
+
+            write-output ("WebhookData " + $WebhookData)
+
+            certlcworkflow -WebhookData $WebhookData, -queuedMessage $queuedMessage
+        }
+    }
+
+
+    write-output "end"
 }
+else {
 
-
-write-output "end"
+    Write-Output "ERROR: This script must be run from an Azure Automation Hybrid Worker"        
+    Write-Output "To install a Hybrid Worker please read:"
+    Write-Output "https://docs.microsoft.com/azure/automation/automation-hybrid-runbook-worker#install-the-hybrid-runbook-worker"
+    Write-Error "This script must be run from an Azure Automation Hybrid Worker"
+    throw "This script must be run from an Azure Automation Hybrid Worker"
+}

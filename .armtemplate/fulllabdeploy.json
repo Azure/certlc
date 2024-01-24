@@ -117,6 +117,15 @@
             "type": "String",
             "defaultValue": "DEMO-EG-<UNIQUESTRING>"
         },
+
+        "StorageAccountName": {
+            "metadata": {
+                "description": "UNIQUE name of the StorageAccount resource"
+            },     
+            "type": "String",       
+            "defaultValue": "demosa<UNIQUESTRING>"
+        },
+        
         "AutomationAccountName": {
             "metadata": {
                 "description": "Name of the Automation Account resource"
@@ -152,13 +161,21 @@
             "type": "string",
             "defaultValue": "[dateTimeAdd(utcNow('u'), 'P1Y')]",
             "metadata": {
-                "description": "The expiry time for the webhook. Default is 365 days from now."
+                "description": "The expiry time for the webhook. Default is 365 days from now. (Example of the format in UTC timezone: 2025-01-22T08:18:24Z)"
+            }
+        },
+
+        "ScheduleStartTime": {
+            "type": "string",
+            "defaultValue": "[dateTimeAdd(utcNow('u'), 'PT1H')]",
+            "metadata": {
+                "description": "The schedlule start time for the runbook. Default is 1 hour from now. (Example of the format in UTC timezone: 2025-01-22T08:18:24Z)"
             }
         },
 
         "_CurrentDateTimeInTicks": {
             "metadata": {
-                "description": "Current date time in ticks used for unique variables"
+                "description": "Current date time in ticks used for unique variables."
             },
             "type": "string",
             "defaultValue": "[utcNow('yyyy-MM-dd')]"
@@ -614,7 +631,7 @@
                 "logActivityTrace": 0,
                 "description": "Certificate Lifecycle Management",
                  "publishContentLink": {
-                    "uri": "https://raw.githubusercontent.com/Azure/certlc/main/.runbook/runbook_v2a.ps1",
+                    "uri": "https://raw.githubusercontent.com/Azure/certlc/main/.runbook/runbook_v3.ps1",
                     "version": "2.1.0.0"
                 }
             }
@@ -661,10 +678,76 @@
             ],
             "properties": {
                 "isEncrypted": false,
-                "value": "[concat('\"',parameters('CaVmName'),'\"')]",
+                "value": "[concat('\"',parameters('CaVmName'),'.',parameters('DomainName'),'\"')]",
                 "description": "The name of the Certification Authority Server"
             }
         },     
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/StorageAccount')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',parameters('StorageAccountName'),'\"')]",
+                "description": "The name of the Storage Account containing the message queue"
+            }
+        },         
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/resourceGroup')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',resourceGroup().name,'\"')]",
+                "description": "The name of the Resource Group containing the Storage Account"
+            }
+        },   
+
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/schedules",
+            "apiVersion": "2023-11-01",
+            "name": "[concat(parameters('AutomationAccountName'), '/Check CertLC Queue')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "description": "Check if pending requests must be managed.",
+                "startTime": "[parameters('ScheduleStartTime')]",
+                "expiryTime": "9999-12-31T23:59:59.9999999+00:00",
+                "interval": 6,
+                "frequency": "Hour",
+                "timeZone": "Europe/Rome"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+            "apiVersion": "2023-11-01",
+            "name": "[concat(parameters('AutomationAccountName'), '/',guid(resourceGroup().id, deployment().name))]",
+            "dependsOn": [
+                "[parameters('automationAccountName')]",
+                "[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('AutomationAccountName'), 'CertLifeCycleMgmt')]"
+            ],
+            "properties": {
+                "runbook": {
+                    "name": "CertLifeCycleMgmt"
+                },
+                "schedule": {
+                    "name": "Check CertLC Queue"
+                },
+                "runOn": "[parameters('WorkerGroupName')]"
+            }
+        },
+
 
         {
             "type": "Microsoft.Compute/virtualMachines/extensions",
@@ -728,7 +811,76 @@
             }
         },
 
-         {
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2023-01-01",
+            "name": "[parameters('StorageAccountName')]",
+            "location": "[variables('location')]",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "dnsEndpointType": "Standard",
+                "defaultToOAuthAuthentication": false,
+                "publicNetworkAccess": "Enabled",
+                "allowCrossTenantReplication": false,
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": true,
+                "allowSharedKeyAccess": true,
+                "networkAcls": {
+                    "bypass": "AzureServices",
+                    "virtualNetworkRules": [],
+                    "ipRules": [],
+                    "defaultAction": "Allow"
+                },
+                "supportsHttpsTrafficOnly": true,
+                "encryption": {
+                    "requireInfrastructureEncryption": false,
+                    "services": {
+                        "file": {
+                            "keyType": "Account",
+                            "enabled": true
+                        },
+                        "blob": {
+                            "keyType": "Account",
+                            "enabled": true
+                        }
+                    },
+                    "keySource": "Microsoft.Storage"
+                },
+                "accessTier": "Hot"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/queueServices",
+            "apiVersion": "2023-01-01",
+            "name": "[concat(parameters('StorageAccountName'), '/default')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]"
+            ],
+            "properties": {
+                "cors": {
+                    "corsRules": []
+                }
+            }
+        },
+        
+        {
+            "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+            "apiVersion": "2023-01-01",
+            "name": "[concat(parameters('StorageAccountName'), '/default/certlc')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('StorageAccountName'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]"
+            ],
+            "properties": {
+                "metadata": {}
+            }
+        },
+
+        {
             "type": "Microsoft.EventGrid/systemTopics",
             "apiVersion": "2023-06-01-preview",
             "name": "[parameters('EventGridName')]",
@@ -745,7 +897,7 @@
         {
             "type": "Microsoft.EventGrid/systemTopics/eventSubscriptions",
             "apiVersion": "2023-06-01-preview",
-            "name": "[concat(parameters('EventGridName'), '/CertLC')]",
+            "name": "[concat(parameters('EventGridName'), '/CertLC-webhook')]",
             "dependsOn": [
                 "[resourceId('Microsoft.EventGrid/systemTopics', parameters('EventGridName'))]",
                 "[resourceId('Microsoft.Automation/automationAccounts/webhooks', parameters('AutomationAccountName'), parameters('webhookName'))]"
@@ -773,6 +925,38 @@
         },
 
         {
+            "type": "Microsoft.EventGrid/systemTopics/eventSubscriptions",
+            "apiVersion": "2023-12-15-preview",
+            "name": "[concat(parameters('EventGridName'), '/CertLC-queue')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.EventGrid/systemTopics', parameters('EventGridName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/queueServices/queues', parameters('storageAccountName') , 'default', 'certlc' )]"
+            ],
+            "properties": {
+                "destination": {
+                    "properties": {
+                        "resourceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+                        "queueName": "certlc",
+                        "queueMessageTimeToLiveInSeconds": 604800
+                    },
+                    "endpointType": "StorageQueue"
+                },
+                "filter": {
+                    "includedEventTypes": [
+                        "Microsoft.KeyVault.CertificateNearExpiry"
+                    ],
+                    "enableAdvancedFilteringOnArrays": true
+                },
+                "labels": [],
+                "eventDeliverySchema": "EventGridSchema",
+                "retryPolicy": {
+                    "maxDeliveryAttempts": 30,
+                    "eventTimeToLiveInMinutes": 1440
+                }
+            }
+        },
+
+        {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "name": "[guid('AA-CertificateOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
@@ -787,6 +971,54 @@
                 "principalType": "ServicePrincipal"
             }
         },
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-ReaderOnSA', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },    
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-ReadDataAccessOnSA', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'c12c1c16-33a1-487b-954d-41c89c60f349')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },        
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-StorageQueueDataContributorOnSA', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },            
 
         {
             "type": "Microsoft.Authorization/roleAssignments",

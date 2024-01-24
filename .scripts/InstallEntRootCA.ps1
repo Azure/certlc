@@ -297,5 +297,18 @@ $newCert | Update-AzKeyVaultCertificate -Tag $tag
              #Write-Host -Foregroundcolor Red " [Error] Unable to configure incoming e-mail domain."
              Exit
        }
+       # Set the service start mode to automatic
+         #Write-Host -Foregroundcolor White " -> Setting SMTP service to automatic start..."
+        try
+        {
+            $smtpService = Get-WmiObject -Class Win32_Service -Filter "Name='SMTPSVC'"
+            $smtpService.ChangeStartMode("Automatic")
+            #Write-Host -Foregroundcolor Green " [OK] Successfully set SMTP service to automatic start."
+        }
+        catch
+        {
+            #Write-Host -Foregroundcolor Red " [Error] Unable to set SMTP service to automatic start."
+            Exit
+        }
 #endregion configure SMTP server
 

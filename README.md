@@ -30,6 +30,7 @@ Parameters that require your primary attention are listed in the table below:
 | **CA Admin Password** | The password of the certificate authority administrator. | |
 | **Key Vault Name** | The name of the key vault. | DEMO-KV-*\<`UNIQUESTRING`>* |
 | **Event Grid Name** | The name of the event grid system topic. | DEMO-EG-*\<`UNIQUESTRING`>* |
+| **Storage Account Name** | The name of the storage account. | demosa*\<`UNIQUESTRING`>* |
 | **Automation Account Name** | The name of the automation account. | DEMO-AA-*\<`UNIQUESTRING`>* |
 
 Additional parameters needed for the deployment can be left to their default values for the purpose of this LAB. Those parameters are listed in the table below:
@@ -52,6 +53,7 @@ Additional parameters needed for the deployment can be left to their default val
 | **Worker Group Name** | The name of the Hybrid Worker Group. | EnterpriseRootCA |
 | **Recipient** | The email address of the recipient to be notified when a certificate is renewed and available on the key vault. | john.doe@demo.com |
 | **Webhook Expiry Time** | The expiry time of the webhook. | 1 year |
+| **Schedule Start Time** | The start time of the scheduled runbook job. | Initial start time with a recurrence of 6 hours |
 | ***_Current Date Time In Ticks*** | The current date time in ticks. This parameter is used to generate unique strings to use during the deploy of role assignments.| [utcNow('yyyy-MM-dd')] |
 
 > [!NOTE]
@@ -82,6 +84,7 @@ The LAB environment is structured to showcase the seamless workflow, allowing fo
 
     - A **Key Vault** housing the initial certificate and all its renewals issued by the CA.
     - An **Event Grid System Topic** triggered by the Key Vault nearing the certificate expiration. This event triggers a Webhook, initiating the execution of a RunBook.
+    - A **Storage Account Queue** used to store the certificate information, which is then retrieved by the RunBook.
     - An **Automation Account** defining:
         - The PowerShell script-based RunBook.
         - Associated Webhook for the RunBook.

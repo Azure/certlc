@@ -79,6 +79,16 @@ configuration ExecuteScript
             DependsOn            = "[PackageManagementSource]PSGallery"
         }
 
+        PackageManagement PSModuleAzStorage
+        {
+            Ensure               = "Present"
+            Name                 = "Az.Storage"
+            MaximumVersion        = "5.5.0"
+            MinimumVersion        = "5.5.0"
+            Source               = "PSGallery"
+            DependsOn            = "[PackageManagementSource]PSGallery"
+        }
+
         PackageManagement PSModuleAzKeyVault
         {
             Ensure               = "Present"
