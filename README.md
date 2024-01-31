@@ -77,8 +77,7 @@ The LAB environment is structured to showcase the seamless workflow, allowing fo
     - Another virtual machine serves as the Public Key Infrastructure (PKI), running the Microsoft Certificate Services configured as the Enterprise Root Certification Authority (CA). The CA is set up with a certificate template issuing certificates with a 5-day validity, tailored for continuous activation within the demo environment.
     
     > [!NOTE]
->
-> The CA virtual machine is configured also as an SMTP server to allow for email communication in this demo environment.
+    >  The CA virtual machine is configured also as an SMTP server to allow for email communication in this demo environment.
      
 1. **Key Components:**
 
