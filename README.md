@@ -1,5 +1,5 @@
 ---
-description: This template deploys the LAB environment for the 'Certificate Lifecycle on Azure' scenario.
+description: This template deploys the environment for the 'Certificate Lifecycle on Azure' scenario.
 page_type: sample
 products:
 - azure
@@ -9,10 +9,81 @@ languages:
 - json
 ---
 
-# Certificate Lifecycle LAB Deployment
-In this tutorial, you will learn how to deploy the LAB environment for the **Certificate Lifecycle on Azure** scenario. The goal is to showcase a comprehensive solution for the automated renewal of certificates issued by non-integrated Certificate Authorities.
+# Certificate Lifecycle Deployment
+In this tutorial, you will learn how to deploy the  components for the **Certificate Lifecycle on Azure** scenario. 
 
-[![Deploy To Azure](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazure.svg?sanitize=true)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2Fcertlc%2Fmain%2F.armtemplate%2Ffulllabdeploy.json)
+There are two flavours of the deployment:
+| Environment | Description | Link |
+|-----------|-------------|---------------|
+|Production|Deploy only KeyVault, Event Grid, Stroage Account and Automation Account|[![Deploy To Azure](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazure.svg?sanitize=true)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2Fcertlc%2Fmain%2F.armtemplate%2Fmindeploy.json)|
+|LAB|Deploy full functional environment for DEMO testing|[![Deploy To Azure](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazure.svg?sanitize=true)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2Fcertlc%2Fmain%2F.armtemplate%2Ffulllabdeploy.json)|
+
+## Production deployment
+The Production creates a Key Vault, an Event Grid System Topic configured with two subscriptions, a Storage Account containing the 'certlc' queue and an Automation Account containing the RunBook and the webhook linked to the Event Grid.
+
+To initiate the deployment of the Production environment, verify to have the *Owner* role on the subscription then click on the **Deploy to Azure** button provided above. This action will trigger the deployment process within the Azure Portal. You will be prompted to provide input parameters.
+
+> [!IMPORTANT]
+> For resources such as key vaults, automation accounts and event-grid, which necessitate globally unique names, kindly replace the *`UNIQUESTRING`* placeholder with a unique string of your choice, following the resource's constraints (e.g., maximum character count, lowercase only, etc.).
+
+Parameters that require your primary attention are listed in the table below:
+
+| Parameter | Description | Default value |
+|-----------|-------------|---------------|
+| **Subscription** | The subscription where the resources will be deployed. | |
+| **Resource Group** | The resource group where the resources will be deployed. | |
+| **Region** | The region where the resources will be deployed. | |
+| **Key Vault Name** | The name of the key vault. | DEMO-KV-*\<`UNIQUESTRING`>* |
+| **Event Grid Name** | The name of the event grid system topic. | DEMO-EG-*\<`UNIQUESTRING`>* |
+| **Storage Account Name** | The name of the storage account. | demosa*\<`UNIQUESTRING`>* |
+| **Automation Account Name** | The name of the automation account. | DEMO-AA-*\<`UNIQUESTRING`>* |
+| **CA Server** | The name of the certificate authority server.|  |
+| **SMTP Server** | The name of the SMTP server for notification e-mail.|  |
+
+Additional parameters needed for the deployment can be left to their default values for the purpose of this LAB. Those parameters are listed in the table below:
+
+| Parameter | Description | Default value |
+|-----------|-------------|---------------|
+| **Webhook Name** | The name of the webhook. | clc-webhook |
+| **Worker Group Name** | The name of the Hybrid Worker Group. | EnterpriseRootCA |
+| **Webhook Expiry Time** | The expiry time of the webhook. | 1 year |
+| **Schedule Start Time** | The start time of the scheduled runbook job. | Initial start time with a recurrence of 6 hours |
+| ***_Current Date Time In Ticks*** | The current date time in ticks. This parameter is used to generate unique strings to use during the deploy of role assignments.| [utcNow('yyyy-MM-dd')] |
+
+> [!NOTE]
+> The deployment process is expected to take approximately 2 minutes to complete.
+
+![Screenshot of a succeeded deployment](./.diagrams/SucceededDeployment.jpg)
+
+To integrate the solution with your existing environment, you need to perform the following steps:
+
+- Configure an Hybrid Worker VM installing the [Azure Hybrid Worker Extension](https://learn.microsoft.com/azure/automation/extension-based-hybrid-runbook-worker-install) on the Certification Authority server (or on a server joined to the same AD domain) and adding it to the Hybrid Worker Group defined in the Automation Account.
+- Install the following Powershell modules on the Hybrid Worker VM:
+
+    ```powershell
+    # Required powershell modules for the Hybrid Worker
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+        Register-PSRepository -Default -InstallationPolicy Trusted
+        Install-Module Az.Resources -requiredVersion 6.6.0 -Repository PSGallery -Scope AllUsers -Force
+        Install-Module Az.Compute -requiredVersion 5.7.0 -Repository PSGallery -Scope AllUsers -Force
+        Install-Module Az.Storage -requiredVersion 5.5.0 -Repository PSGallery -Scope AllUsers -Force
+        Install-Module Az.KeyVault -requiredVersion 4.9.2 -Repository PSGallery -Scope AllUsers -Force
+        Install-Module Az.Accounts -requiredVersion 2.12.1
+        Install-Module PSPKI -Repository PSGallery -Scope AllUsers -Force
+    ```
+
+
+- Add the 'System' account of the Hybrid RunBook Worker VM the "Read" and "Enroll" permissions to the Certificate Template(s) used to generate the certificates.
+- Install the [Key Vault extension](#key-vault-extension) on the servers that need to retrieve the renewed certificates from the Key Vault.
+- Add the 'Key Vault Secret User' role to the the servers with the Key Vault extension on the Key Vault containing the certificates.
+- If you've specified the SMTPServer parameter during deployment, ensure the following: 
+    - the Hybrid RunBook Worker VM can reach the SMTP server, 
+    - the SMTP port is open in the firewall, 
+    - the SMTP server accepts mail submissions from the Hybrid RunBook Worker VM.
+- Import the certificates into the Key Vault and **TAG** them with the administrator e-mail address for notification purposes. If multiple recipients are required, the e-mail addresses should be separated by comma or semicolon. The expected tag name is 'Recipient' and the value is the e-mail address(es) of the administrator(s).
+
+## LAB deployment
+The goal of the LAB is to showcase a comprehensive solution for the automated renewal of certificates issued by non-integrated Certificate Authorities.
 
 To initiate the deployment of the LAB environment, verify to have the *Owner* role on the subscription then click on the **Deploy to Azure** button provided above. This action will trigger the deployment process within the Azure Portal. You will be prompted to provide input parameters.
 
