@@ -55,13 +55,6 @@ $resource = "https://monitor.azure.com"
 $authResult = Get-AzAccessToken -ResourceUrl $resource
 $bearerToken = $authResult.Token
 
-### Get the access token using the managed identity
-# $uri = "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=$resource"
-# $headers = @{"Metadata"="true";"Content-Type"="application/x-www-form-urlencoded"};
-# $response = Invoke-RestMethod -Uri $uri -Method "Get" -Headers $headers
-
-# ### Extract the access token from the response
-# $bearerToken = $response.access_token
 
 ### Debugging: Print token and other info
 Write-Output "Access Token: $bearerToken"
@@ -95,9 +88,9 @@ try {
 
       }
     } catch {
-        Write-Output "Error getting certificates from Key Vault"
-        Write-Error "Error getting certificates from Key Vault"
-        throw "Error getting certificates from Key Vault"
+        Write-Output "Error getting certificates from Key Vault or sending data to Log Analytics"
+        Write-Error "Error getting certificates from Key Vault or sending data to Log Analytics"
+        throw "Error getting certificates from Key Vault or sending data to Log Analytics"
         $continue = $false
     }
         
