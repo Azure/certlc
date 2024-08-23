@@ -102,12 +102,18 @@
                 "description": "The password for the administrator account of the Certificate Service VM."
             }
         },
+        "UNIQUESTRING": {
+            "type": "string",
+            "metadata": {
+                "description": "The string used as a suffix for the unique resources below."
+            }
+        },
         "KeyVaultName": {
             "metadata": {
                 "description": "UNIQUE name of the Key Vault resource"
             },
             "type": "String",
-            "defaultValue": "DEMO-KV-<UNIQUESTRING>"
+            "defaultValue": "[concat('DEMO-KV-',parameters('UNIQUESTRING'))]"
         },
 
         "EventGridName": {
@@ -115,7 +121,7 @@
                 "description": "UNIQUE name of the Event Grid resource"
             },
             "type": "String",
-            "defaultValue": "DEMO-EG-<UNIQUESTRING>"
+            "defaultValue": "[concat('DEMO-EG-',parameters('UNIQUESTRING'))]"
         },
 
         "StorageAccountName": {
@@ -123,7 +129,7 @@
                 "description": "UNIQUE name of the StorageAccount resource"
             },     
             "type": "String",       
-            "defaultValue": "demosa<UNIQUESTRING>"
+            "defaultValue": "[concat('demosa',parameters('UNIQUESTRING'))]"
         },
         
         "AutomationAccountName": {
@@ -131,7 +137,28 @@
                 "description": "Name of the Automation Account resource"
             },
             "type": "String",
-            "defaultValue": "DEMO-AA-<UNIQUESTRING>"
+            "defaultValue": "[concat('DEMO-AA-',parameters('UNIQUESTRING'))]"
+        },
+        "workspaceName": {
+            "type": "string",
+            "defaultValue": "[concat('DEMO-LA-',parameters('UNIQUESTRING'))]",
+            "metadata": {
+            "description": "Specify the name of the Log Analytics workspace."
+            }
+        },
+        "dataCollectionEndpointName": {
+            "type": "String",
+            "defaultValue": "[concat('DEMO-DCE-',parameters('UNIQUESTRING'))]",
+            "metadata": {
+                "description": "Specifies the name of the Data Collection Endpoints to create."
+            }
+        },
+        "dataCollectionRuleName": {
+            "type": "String",
+            "defaultValue": "[concat('DEMO-DCR-',parameters('UNIQUESTRING'))]",
+            "metadata": {
+                "description": "Specifies the name of the Data Collection Rule to create."
+            }
         },
         "webhookName": {
             "metadata": {
@@ -157,6 +184,63 @@
         },
 
 
+        "sku": {
+            "type": "string",
+            "defaultValue": "PerGB2018",
+            "allowedValues": [
+            "CapacityReservation",
+            "Free",
+            "LACluster",
+            "PerGB2018",
+            "PerNode",
+            "Premium",
+            "Standalone",
+            "Standard"
+            ],
+            "metadata": {
+            "description": "Specify the pricing tier: PerGB2018 or legacy tiers (Free, Standalone, PerNode, Standard or Premium) which are not available to all customers."
+            }
+        },
+        "retentionInDays": {
+            "type": "int",
+            "defaultValue": 120,
+            "metadata": {
+            "description": "Specify the number of days to retain data."
+            }
+        },
+        "resourcePermissions": {
+            "type": "bool",
+            "defaultValue": true,
+            "metadata": {
+            "description": "Specify true to use resource or workspace permissions, or false to require workspace permissions."
+            }
+        },
+        "TableName": {
+            "type": "string",
+            "defaultValue":"Clcdata",
+            "metadata": {
+            "description": "Specify the name of the Table used for CERTLC dashboard data."
+            }
+        },
+        "heartbeatTableRetention": {
+            "type": "int",
+            "defaultValue": 30,
+            "metadata": {
+            "description": "Specify the number of days to retain data in Heartbeat table."
+            }
+        },
+
+
+        "workbookDisplayName": {
+            "type": "string",
+            "defaultValue": "CERTLC Dashboard",
+            "metadata": {
+                "description": "The friendly name for the workbook that is used in the Gallery or Saved List.  This name must be unique within a resource group."
+            }
+        },
+
+
+
         "WebhookExpiryTime": {
             "type": "string",
             "defaultValue": "[dateTimeAdd(utcNow('u'), 'P1Y')]",
@@ -170,6 +254,20 @@
             "defaultValue": "[dateTimeAdd(utcNow('u'), 'PT1H')]",
             "metadata": {
                 "description": "The schedlule start time for the runbook. Default is 1 hour from now. (Example of the format in UTC timezone: 2025-01-22T08:18:24Z)"
+            }
+        },
+        "workbookId": {
+            "type": "string",
+            "defaultValue": "[newGuid()]",
+            "metadata": {
+                "description": "The unique guid for this workbook instance"
+            }
+        },
+        "ScheduleDashboardDataStartTime": {
+            "type": "string",
+            "defaultValue": "[dateTimeAdd(utcNow('u'), 'PT32M')]",
+            "metadata": {
+                "description": "The schedlule start time for the Dashboard Data Injestion runbook. Default is 30 minutes from now. (Example of the format in UTC timezone: 2026-01-22T08:18:24Z)"
             }
         },
 
@@ -187,7 +285,9 @@
         "DCnicName": "[concat(parameters('DCvmName'),'-nic')]",
         "DCpublicIPAddressName": "[concat(parameters('DCvmName'),'-ip')]",
         "CAnicName": "[concat(parameters('CAvmName'),'-nic')]",
-        "Location": "[resourceGroup().location]"
+        "Location": "[resourceGroup().location]",
+        "TableName": "[concat(parameters('TableName'),'_CL')]",
+        "streamName": "[concat('Custom-',parameters('TableName'),'RawData')]"
     },
     "resources": [
         {
@@ -456,7 +556,6 @@
                     ]
                 }
             },
-            "licenseType": "Windows_Server",
             "dependsOn": [
                 "[resourceId('Microsoft.Network/networkInterfaces', variables('CAnicName'))]",
                 "[resourceId('Microsoft.Compute/virtualMachines', parameters('DCvmName'))]",
@@ -732,7 +831,7 @@
         {
             "type": "Microsoft.Automation/automationAccounts/jobSchedules",
             "apiVersion": "2023-11-01",
-            "name": "[concat(parameters('AutomationAccountName'), '/',guid(resourceGroup().id, deployment().name))]",
+            "name": "[concat(parameters('AutomationAccountName'), '/',guid(resourceGroup().id, deployment().name,'-CertLCJobSchedule'))]",
             "dependsOn": [
                 "[parameters('automationAccountName')]",
                 "[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('AutomationAccountName'), 'CertLifeCycleMgmt')]"
@@ -957,6 +1056,332 @@
         },
 
         {
+            "type": "Microsoft.OperationalInsights/workspaces",
+            "apiVersion": "2021-12-01-preview",
+            "name": "[parameters('workspaceName')]",
+            "location": "[variables('Location')]",
+            "properties": {
+            "sku": {
+                "name": "[parameters('sku')]"
+            },
+            "retentionInDays": "[parameters('retentionInDays')]",
+            "features": {
+                "enableLogAccessUsingOnlyResourcePermissions": "[parameters('resourcePermissions')]"
+            }
+            }
+        },
+
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2020-08-01",
+            "name": "[format('{0}/{1}', parameters('workspaceName'), 'CERTLC - certificate list')]",
+            "properties": {
+                "etag": "*",
+                "displayName": "CERTLC - certificate list",
+                "category": "CERTLC",
+                "query": "[concat(variables('TableName'),'| extend ExpirationDate = todatetime(CertExpiration) | extend ExpiryStatus = case(ExpirationDate <= now(), ''Expired'', ExpirationDate <= now() + 5d, ''Expiring in 5 Days'', ''Not Expired'')| where [''TimeGenerated''] == toscalar(',variables('TableName'),' | summarize max([''TimeGenerated'']))| project ExpiryStatus, CertExpiration, CertName, CertSubject, CertRecipient,  KeyVault, CertThumbprint, [''TimeGenerated'']| sort by ExpiryStatus')]",
+                "version": 1
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+            ]
+        },
+
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2020-08-01",
+            "name": "[format('{0}/{1}', parameters('workspaceName'), 'CERTLC - certificate status')]",
+            "properties": {
+                "etag": "*",
+                "displayName": "CERTLC - certificate status",
+                "category": "CERTLC",
+                "query": "[concat(variables('TableName'),'| where [''TimeGenerated''] == toscalar(',variables('TableName'),'| summarize max([''TimeGenerated'']))| extend ExpiryStatus = case(todatetime(CertExpiration) <= now(), ''Expired'',todatetime(CertExpiration) <= now() + 5d, ''Expiring in 5 Days'', ''Not Expired'')| summarize CertificateCount = count() by ExpiryStatus')]",
+                "version": 1
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+            ]
+        },
+
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/tables",
+            "apiVersion": "2022-10-01",
+            "name": "[format('{0}/{1}', parameters('workspaceName'), variables('TableName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('DCvmName'), 'CreateADForest')]"
+            ],
+            "properties": {
+                "totalRetentionInDays": "[parameters('heartbeatTableRetention')]",
+                "plan": "Analytics",
+                "schema": {
+                    "name": "[format('{0}_{1}', parameters('TableName'),'CL')]",
+                    "columns": [
+                        {
+                            "name": "CertExpiration",
+                            "type": "string",
+                            "description": "Expiration date of the certificate"
+                        },
+                        {
+                            "name": "CertIssuer",
+                            "type": "string",
+                            "description": "Name of the Certification Authority that issued the certificate"
+                        },
+                        {
+                            "name": "CertName",
+                            "type": "string",
+                            "description": "Name of the certificate"
+                        },
+                        {
+                            "name": "CertRecipient",
+                            "type": "string",
+                            "description": "Recipient to be notified about the expiration of the certificate"
+                        },
+                        {
+                            "name": "CertSubject",
+                            "type": "string",
+                            "description": "Subject of the certificate"
+                        },
+                        {
+                            "name": "CertThumbprint",
+                            "type": "string",
+                            "description": "Thumbprint of the certificate"
+                        },
+                        {
+                            "name": "KeyVault",
+                            "type": "string",
+                            "description": "The Keyvault that owns the certificate"
+                        },
+                        {
+                            "name": "TimeGenerated",
+                            "type": "datetime",
+                            "description": "The time at which the data was generated"
+                        }
+                    ]
+                },
+                "retentionInDays": "[parameters('heartbeatTableRetention')]"
+            }
+        },
+
+        {
+                "type": "Microsoft.Insights/dataCollectionEndpoints",
+                "apiVersion": "2023-03-11",
+                "name": "[parameters('dataCollectionEndpointName')]",
+                "location": "[variables('Location')]",
+                "properties": {
+                    "networkAcls": {
+                        "publicNetworkAccess": "Enabled"
+                    }
+                }
+        },
+
+        {
+                "type": "Microsoft.Insights/dataCollectionRules",
+                "dependsOn": [
+                    "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]",
+                    "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                    "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), variables('TableName'))]"
+                ],
+                "apiVersion": "2023-03-11",
+                "name": "[parameters('dataCollectionRuleName')]",
+                "location": "[variables('location')]",
+                "kind": "Direct",
+                "properties": {
+                    "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]",
+                    "streamDeclarations": {
+                        "[variables('streamName')]": {
+                            "columns": [
+                                {
+                                    "name": "Time",
+                                    "type": "datetime"
+                                },
+                                {
+                                    "name": "KeyVault",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "AdditionalContext",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertName",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertIssuer",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertThumbprint",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertSubject",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertExpiration",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertRecipient",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "destinations": {
+                        "logAnalytics": [
+                            {
+                                "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                                "name": "[parameters('workspaceName')]"
+                            }
+                        ]
+                    },
+                    "dataFlows": [
+                        {
+                            "streams": [
+                                "[variables('streamName')]"
+                            ],
+                            "destinations": [
+                                "[parameters('workspaceName')]"
+                            ],
+                            "transformKql": "source | project TimeGenerated = Time, KeyVault, CertName, CertIssuer, CertThumbprint, CertSubject, CertExpiration, CertRecipient",
+                            "outputStream": "[concat('Custom-',variables('TableName'))]"
+                        }
+                    ]
+                }
+        },
+
+        {
+            "type": "microsoft.insights/workbooks",
+            "name": "[parameters('workbookId')]",
+            "location": "[variables('Location')]",
+            "apiVersion": "2022-04-01",
+            "dependsOn": [
+            ],
+            "kind": "shared",
+            "properties": {
+                "displayName": "[parameters('workbookDisplayName')]",
+                "serializedData": "[concat('{\"version\":\"Notebook/1.0\",\"items\":[{\"type\":3,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"', variables('TableName'), '\\n| where [''TimeGenerated''] == toscalar(\\n    ', variables('TableName'), '\\n    | summarize max([''TimeGenerated''])\\n)\\n| extend ExpiryStatus = case(\\n    todatetime(CertExpiration) <= now(), \\\"Expired\\\",\\n    todatetime(CertExpiration) <= now() + 5d, \\\"Expiring soon\\\",\\n    \\\"Not Expired\\\"\\n)\\n| summarize CertificateCount = count() by ExpiryStatus\\n| render piechart\\n\",\"size\":3,\"timeContext\":{\"durationMs\":86400000},\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\",\"crossComponentResources\":[\"', resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), '\"],\"visualization\":\"piechart\",\"chartSettings\":{\"seriesLabelSettings\":[{\"seriesName\":\"Expiring soon\",\"color\":\"yellow\"},{\"seriesName\":\"Not Expired\",\"color\":\"green\"},{\"seriesName\":\"Expired\",\"color\":\"redBright\"}]}},\"name\":\"query - 0\"},{\"type\":3,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"', variables('TableName'), '\\n| extend ExpirationDate = todatetime(CertExpiration)\\n| extend ExpiryStatus = case(\\n    ExpirationDate <= now(), \\\"Expired\\\",\\n    ExpirationDate <= now() + 5d, \\\"Expiring soon\\\",\\n    \\\"Not Expired\\\"\\n)\\n| where [''TimeGenerated''] == toscalar(\\n    ', variables('TableName'), '\\n    | summarize max([''TimeGenerated''])\\n)\\n| project ExpiryStatus, CertExpiration, CertName, CertSubject, CertRecipient, KeyVault, CertThumbprint, [''TimeGenerated'']\\n| sort by ExpiryStatus\\n\",\"size\":3,\"timeContext\":{\"durationMs\":172800000},\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\",\"crossComponentResources\":[\"', resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), '\"],\"gridSettings\":{\"hierarchySettings\":{\"treeType\":1,\"groupBy\":[\"ExpiryStatus\"],\"expandTopLevel\":true,\"finalBy\":\"ExpiryStatus\"},\"labelSettings\":[{\"columnId\":\"ExpiryStatus\",\"label\":\"Status\"}]}},\"name\":\"query - 1\"}],\"isLocked\":false,\"fallbackResourceIds\":[\"azure monitor\"],\"styleSettings\":{\"paddingStyle\":\"wide\",\"spacingStyle\":\"wide\"}}')]",
+                "version": "1.0",
+                "sourceId": "azure monitor",
+                "category": "workbook"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/dcrEndpointUri')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2023-03-11').logsIngestion.endpoint,'\"')]",
+                "description": "The name of the DCR Endpoint URI"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/dcrImmutableId')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',reference(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName')), '2023-03-11').immutableId,'\"')]",
+                "description": "The immutable ID of the DCR"
+            }
+        },
+            
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/VaultName')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',parameters('keyVaultName'),'\"')]",
+                "description": "The name of the KeyVault"
+            }
+        },
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/streamName')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',variables('streamName'),'\"')]",
+                "description": "The name of the stream"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/runbooks",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('AutomationAccountName'), '/CertLCDashboardDataInjestion')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "location": "[variables('Location')]",
+            "properties": {
+                "runbookType": "PowerShell",
+                "logVerbose": false,
+                "logProgress": false,
+                "logActivityTrace": 0,
+                "description": "Certificate Lifecycle Dashboard Data Ingestion",
+                    "publishContentLink": {
+                    "uri": "https://raw.githubusercontent.com/Azure/certlc/main/.runbook/dashboard_fe_v1.ps1",
+                    "version": "2.1.0.0"
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/schedules",
+            "apiVersion": "2023-11-01",
+            "name": "[concat(parameters('AutomationAccountName'), '/injestData_hourly')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "startTime": "[parameters('ScheduleDashboardDataStartTime')]",
+                "expiryTime": "",
+                "interval": 1,
+                "frequency": "Hour",
+                "timeZone": "Europe/Rome"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+            "apiVersion": "2023-11-01",
+            "name": "[concat(parameters('AutomationAccountName'), '/',guid(resourceGroup().id, deployment().name,'-CertLCDashboardDataInjestion'))]",
+            "dependsOn": ["[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('AutomationAccountName'), 'CertLCDashboardDataInjestion')]"],
+            "properties": {
+                "runbook": {
+                    "name": "CertLCDashboardDataInjestion"
+                },
+                "schedule": {
+                    "name": "injestData_hourly"
+                }
+            }
+        },
+
+
+
+
+
+        {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "name": "[guid('AA-CertificateOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
@@ -967,6 +1392,22 @@
             ],
             "properties": {
                 "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'a4417e6f-fecd-4de8-b567-7b0420556985')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-CryptoOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '14b46e9e-c2b7-41b4-b07b-48a6ebf60603')]",
                 "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
                 "principalType": "ServicePrincipal"
             }
@@ -1023,6 +1464,52 @@
         {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
+            "name": "[guid('AA-MonitoringMetricsPublisherOnDCR', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '3913510d-42f4-4e42-8a64-420c390055eb')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },   
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-MonitoringMetricsPublisherOnDCE', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '3913510d-42f4-4e42-8a64-420c390055eb')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },   
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid('AA-LogAnalyticsContributorOnLA', variables('UniqueStringBasedOnTimeStamp'))]",
+            "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                "[resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '3913510d-42f4-4e42-8a64-420c390055eb')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('AutomationAccountName')), '2022-08-08', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },   
+
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
             "name": "[guid('CA-CryptoOfficerOnKeyVault', variables('UniqueStringBasedOnTimeStamp'))]",
             "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyvaultName'))]",
             "dependsOn": [
@@ -1066,7 +1553,7 @@
                 "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('DCvmName')), '2023-03-01', 'full').identity.principalId]",
                 "principalType": "ServicePrincipal"
             }
-        }        
+        }  
 
     ],
     "outputs": {
@@ -1101,6 +1588,26 @@
         "webhookuri": {
             "type": "string",
             "value": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', parameters('AutomationAccountName'), parameters('webhookName'))).uri]"
+        },
+        "workspaceId": {
+            "type": "string",
+            "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+        },
+        "VaultName": {
+            "type": "string",
+            "value": "[parameters('keyVaultName')]"
+        },
+        "dcrImmutableId": {
+            "type": "String",
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName')), '2023-03-11').immutableId]"
+        },
+        "dcrEndpointUri": {
+            "type": "String",
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2023-03-11').logsIngestion.endpoint]"
+            },
+        "streamName": {
+            "type": "String",
+            "value": "[variables('streamName')]"
         }
     }
 }

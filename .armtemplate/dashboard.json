@@ -1,0 +1,445 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {      
+
+      "workspaceName": {
+        "type": "string",
+        "metadata": {
+          "description": "Specify the name of the Log Analytics workspace."
+        }
+      },
+      "TableName": {
+        "type": "string",
+        "metadata": {
+          "description": "Specify the name of the Table used for CERTLC dashboard."
+        }
+      },
+     "dataCollectionEndpointName": {
+         "type": "String",
+          "metadata": {
+            "description": "Specifies the name of the Data Collection Endpoint to create."
+        }
+      },
+      "dataCollectionRuleName": {
+            "type": "String",
+            "metadata": {
+                "description": "Specifies the name of the Data Collection Rule to create."
+            }
+      },
+      "workbookDisplayName": {
+            "type": "string",
+            "metadata": {
+                "description": "The friendly name for the workbook that is used in the Gallery or Saved List.  This name must be unique within a resource group."
+            }
+      },
+      
+        "keyVaultName": {
+            "type": "String",
+            "metadata": {
+                "description": "Specifies the name of the EXISTING KeyVault containing the certificates."
+            }
+      },
+        "automationAccountName": {
+            "type": "String",
+            "metadata": {
+                "description": "Specifies the name of the EXISTING Automation Account that will store the new Runbook."
+            }
+        },
+      "sku": {
+        "type": "string",
+        "defaultValue": "PerGB2018",
+        "allowedValues": [
+          "CapacityReservation",
+          "Free",
+          "LACluster",
+          "PerGB2018",
+          "PerNode",
+          "Premium",
+          "Standalone",
+          "Standard"
+        ],
+        "metadata": {
+          "description": "Specify the pricing tier: PerGB2018 or legacy tiers (Free, Standalone, PerNode, Standard or Premium) which are not available to all customers."
+        }
+      },
+      "retentionInDays": {
+        "type": "int",
+        "defaultValue": 120,
+        "metadata": {
+          "description": "Specify the number of days to retain data."
+        }
+      },
+      "resourcePermissions": {
+        "type": "bool",
+        "defaultValue": true,
+        "metadata": {
+          "description": "Specify true to use resource or workspace permissions, or false to require workspace permissions."
+        }
+      },
+
+      "heartbeatTableRetention": {
+        "type": "int",
+         "defaultValue": 30,
+        "metadata": {
+          "description": "Specify the number of days to retain data in Heartbeat table."
+        }
+      },
+ 
+
+        "workbookId": {
+            "type": "string",
+            "defaultValue": "[newGuid()]",
+            "metadata": {
+                "description": "The unique guid for this workbook instance"
+            }
+        },
+
+        "ScheduleDashboardDataStartTime": {
+            "type": "string",
+            "defaultValue": "[dateTimeAdd(utcNow('u'), 'PT10M')]",
+            "metadata": {
+                "description": "The schedlule start time for the Dashboard Data Injestion runbook. Default is 10 minutes from now. (Example of the format in UTC timezone: 2026-01-22T08:18:24Z)"
+            }
+        }
+    },
+    "variables":
+    {
+      "Location": "[resourceGroup().location]",
+      "TableName": "[concat(parameters('TableName'),'_CL')]",
+      "streamName": "[concat('Custom-',parameters('TableName'),'RawData')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.OperationalInsights/workspaces",
+            "apiVersion": "2021-12-01-preview",
+            "name": "[parameters('workspaceName')]",
+            "location": "[variables('Location')]",
+            "properties": {
+            "sku": {
+                "name": "[parameters('sku')]"
+            },
+            "retentionInDays": "[parameters('retentionInDays')]",
+            "features": {
+                "enableLogAccessUsingOnlyResourcePermissions": "[parameters('resourcePermissions')]"
+            }
+            }
+        },
+
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2020-08-01",
+            "name": "[format('{0}/{1}', parameters('workspaceName'), 'CERTLC - certificate list')]",
+            "properties": {
+                "etag": "*",
+                "displayName": "CERTLC - certificate list",
+                "category": "CERTLC",
+                "query": "[concat(variables('TableName'),'| extend ExpirationDate = todatetime(CertExpiration) | extend ExpiryStatus = case(ExpirationDate <= now(), ''Expired'', ExpirationDate <= now() + 5d, ''Expiring in 5 Days'', ''Not Expired'')| where [''TimeGenerated''] == toscalar(',variables('TableName'),' | summarize max([''TimeGenerated'']))| project ExpiryStatus, CertExpiration, CertName, CertSubject, CertRecipient,  KeyVault, CertThumbprint, [''TimeGenerated'']| sort by ExpiryStatus')]",
+                "version": 1
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+            ]
+        },
+
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2020-08-01",
+            "name": "[format('{0}/{1}', parameters('workspaceName'), 'CERTLC - certificate status')]",
+            "properties": {
+                "etag": "*",
+                "displayName": "CERTLC - certificate status",
+                "category": "CERTLC",
+                "query": "[concat(variables('TableName'),'| where [''TimeGenerated''] == toscalar(',variables('TableName'),'| summarize max([''TimeGenerated'']))| extend ExpiryStatus = case(todatetime(CertExpiration) <= now(), ''Expired'',todatetime(CertExpiration) <= now() + 5d, ''Expiring in 5 Days'', ''Not Expired'')| summarize CertificateCount = count() by ExpiryStatus')]",
+                "version": 1
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+            ]
+        },
+
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/tables",
+            "apiVersion": "2022-10-01",
+            "name": "[format('{0}/{1}', parameters('workspaceName'), variables('TableName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+            ],
+            "properties": {
+                "totalRetentionInDays": "[parameters('heartbeatTableRetention')]",
+                "plan": "Analytics",
+                "schema": {
+                    "name": "[format('{0}_{1}', parameters('TableName'),'CL')]",
+                    "columns": [
+                        {
+                            "name": "CertExpiration",
+                            "type": "string",
+                            "description": "Expiration date of the certificate"
+                        },
+                        {
+                            "name": "CertIssuer",
+                            "type": "string",
+                            "description": "Name of the Certification Authority that issued the certificate"
+                        },
+                        {
+                            "name": "CertName",
+                            "type": "string",
+                            "description": "Name of the certificate"
+                        },
+                        {
+                            "name": "CertRecipient",
+                            "type": "string",
+                            "description": "Recipient to be notified about the expiration of the certificate"
+                        },
+                        {
+                            "name": "CertSubject",
+                            "type": "string",
+                            "description": "Subject of the certificate"
+                        },
+                        {
+                            "name": "CertThumbprint",
+                            "type": "string",
+                            "description": "Thumbprint of the certificate"
+                        },
+                        {
+                            "name": "KeyVault",
+                            "type": "string",
+                            "description": "The Keyvault that owns the certificate"
+                        },
+                        {
+                            "name": "TimeGenerated",
+                            "type": "datetime",
+                            "description": "The time at which the data was generated"
+                        }
+                    ]
+                },
+                "retentionInDays": "[parameters('heartbeatTableRetention')]"
+            }
+        },
+
+        {
+                "type": "Microsoft.Insights/dataCollectionEndpoints",
+                "apiVersion": "2023-03-11",
+                "name": "[parameters('dataCollectionEndpointName')]",
+                "location": "[variables('Location')]",
+                "properties": {
+                    "networkAcls": {
+                        "publicNetworkAccess": "Enabled"
+                    }
+                }
+        },
+
+        {
+                "type": "Microsoft.Insights/dataCollectionRules",
+                "dependsOn": [
+                    "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]",
+                    "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                    "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), variables('TableName'))]"
+                ],
+                "apiVersion": "2023-03-11",
+                "name": "[parameters('dataCollectionRuleName')]",
+                "location": "[variables('Location')]",
+                "kind": "Direct",
+                "properties": {
+                    "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]",
+                    "streamDeclarations": {
+                        "[variables('streamName')]": {
+                            "columns": [
+                                {
+                                    "name": "Time",
+                                    "type": "datetime"
+                                },
+                                {
+                                    "name": "KeyVault",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "AdditionalContext",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertName",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertIssuer",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertThumbprint",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertSubject",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertExpiration",
+                                    "type": "string"
+                                },
+                                {
+                                    "name": "CertRecipient",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    },
+                    "destinations": {
+                        "logAnalytics": [
+                            {
+                                "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                                "name": "[parameters('workspaceName')]"
+                            }
+                        ]
+                    },
+                    "dataFlows": [
+                        {
+                            "streams": [
+                                "[variables('streamName')]"
+                            ],
+                            "destinations": [
+                                "[parameters('workspaceName')]"
+                            ],
+                            "transformKql": "source | project TimeGenerated = Time, KeyVault, CertName, CertIssuer, CertThumbprint, CertSubject, CertExpiration, CertRecipient",
+                            "outputStream": "[concat('Custom-',variables('TableName'))]"
+                        }
+                    ]
+                }
+        },
+
+        {
+            "name": "[parameters('workbookId')]",
+            "type": "microsoft.insights/workbooks",
+            "location": "[variables('Location')]",
+            "apiVersion": "2022-04-01",
+            "dependsOn": [],
+            "kind": "shared",
+            "properties": {
+                "displayName": "[parameters('workbookDisplayName')]",
+                "serializedData": "[concat('{\"version\":\"Notebook/1.0\",\"items\":[{\"type\":3,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"', variables('TableName'), '\\n| where [''TimeGenerated''] == toscalar(\\n    ', variables('TableName'), '\\n    | summarize max([''TimeGenerated''])\\n)\\n| extend ExpiryStatus = case(\\n    todatetime(CertExpiration) <= now(), \\\"Expired\\\",\\n    todatetime(CertExpiration) <= now() + 5d, \\\"Expiring soon\\\",\\n    \\\"Not Expired\\\"\\n)\\n| summarize CertificateCount = count() by ExpiryStatus\\n| render piechart\\n\",\"size\":3,\"timeContext\":{\"durationMs\":86400000},\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\",\"crossComponentResources\":[\"', resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), '\"],\"visualization\":\"piechart\",\"chartSettings\":{\"seriesLabelSettings\":[{\"seriesName\":\"Expiring soon\",\"color\":\"yellow\"},{\"seriesName\":\"Not Expired\",\"color\":\"green\"},{\"seriesName\":\"Expired\",\"color\":\"redBright\"}]}},\"name\":\"query - 0\"},{\"type\":3,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"', variables('TableName'), '\\n| extend ExpirationDate = todatetime(CertExpiration)\\n| extend ExpiryStatus = case(\\n    ExpirationDate <= now(), \\\"Expired\\\",\\n    ExpirationDate <= now() + 5d, \\\"Expiring soon\\\",\\n    \\\"Not Expired\\\"\\n)\\n| where [''TimeGenerated''] == toscalar(\\n    ', variables('TableName'), '\\n    | summarize max([''TimeGenerated''])\\n)\\n| project ExpiryStatus, CertExpiration, CertName, CertSubject, CertRecipient, KeyVault, CertThumbprint, [''TimeGenerated'']\\n| sort by ExpiryStatus\\n\",\"size\":3,\"timeContext\":{\"durationMs\":172800000},\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\",\"crossComponentResources\":[\"', resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), '\"],\"gridSettings\":{\"hierarchySettings\":{\"treeType\":1,\"groupBy\":[\"ExpiryStatus\"],\"expandTopLevel\":true,\"finalBy\":\"ExpiryStatus\"},\"labelSettings\":[{\"columnId\":\"ExpiryStatus\",\"label\":\"Status\"}]}},\"name\":\"query - 1\"}],\"isLocked\":false,\"fallbackResourceIds\":[\"azure monitor\"],\"styleSettings\":{\"paddingStyle\":\"wide\",\"spacingStyle\":\"wide\"}}')]",
+                "version": "1.0",
+                "sourceId": "azure monitor",
+                "category": "workbook"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/dcrEndpointUri')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2023-03-11').logsIngestion.endpoint,'\"')]",
+                "description": "The name of the DCR Endpoint URI"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/dcrImmutableId')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName'))]"
+            ],
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',reference(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName')), '2023-03-11').immutableId,'\"')]",
+                "description": "The immutable ID of the DCR"
+            }
+        },
+            
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/VaultName')]",
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',parameters('keyVaultName'),'\"')]",
+                "description": "The name of the KeyVault"
+            }
+        },
+        {
+            "type": "Microsoft.Automation/automationAccounts/variables",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('automationAccountName'), '/streamName')]",
+            "properties": {
+                "isEncrypted": false,
+                "value": "[concat('\"',variables('streamName'),'\"')]",
+                "description": "The name of the stream"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/runbooks",
+            "apiVersion": "2022-08-08",
+            "name": "[concat(parameters('AutomationAccountName'), '/CertLCDashboardDataInjestion')]",
+            "location": "[variables('Location')]",
+            "properties": {
+                "runbookType": "PowerShell",
+                "logVerbose": false,
+                "logProgress": false,
+                "logActivityTrace": 0,
+                "description": "Certificate Lifecycle Dashboard Data Ingestion",
+                    "publishContentLink": {
+                    "uri": "https://raw.githubusercontent.com/Azure/certlc/main/.runbook/dashboard_v1.ps1",
+                    "version": "2.1.0.0"
+                }
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/schedules",
+            "apiVersion": "2023-11-01",
+            "name": "[concat(parameters('AutomationAccountName'), '/injestData_hourly')]",
+            "properties": {
+                "startTime": "[parameters('ScheduleDashboardDataStartTime')]",
+                "expiryTime": "",
+                "interval": 1,
+                "frequency": "Hour",
+                "timeZone": "Europe/Rome"
+            }
+        },
+
+        {
+            "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+            "apiVersion": "2023-11-01",
+            "name": "[concat(parameters('AutomationAccountName'), '/',guid(resourceGroup().id, deployment().name))]",
+            "dependsOn": ["[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('AutomationAccountName'), 'CertLCDashboardDataInjestion')]"],
+            "properties": {
+                "runbook": {
+                    "name": "CertLCDashboardDataInjestion"
+                },
+                "schedule": {
+                    "name": "injestData_hourly"
+                }
+            }
+        }
+
+
+    ],
+    "outputs": {
+      "workspaceId": {
+        "type": "string",
+        "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+      },
+      "VaultName": {
+        "type": "string",
+        "value": "[parameters('keyVaultName')]"
+      },
+      "dcrImmutableId": {
+        "type": "String",
+        "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName')), '2023-03-11').immutableId]"
+       },
+       "dcrEndpointUri": {
+        "type": "String",
+        "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2023-03-11').logsIngestion.endpoint]"
+        },
+        "streamName": {
+            "type": "String",
+            "value": "[variables('streamName')]"
+        }
+    }
+  }
