@@ -268,8 +268,7 @@ if ($HybridWorker ) {
         $queueName = "certlc"
 
         try {
-            $storageAccount = get-AzStorageAccount -ResourceGroupName $resourceGroup  -Name $storageAccountName 
-            $ctx = $storageAccount.Context
+            $ctx = New-AzStorageContext -StorageAccountName $storageAccountName -UseConnectedAccount
         } catch {
             write-output "Error getting storage account"
             Write-Error "Error getting storage account"
