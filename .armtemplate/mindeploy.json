@@ -422,7 +422,7 @@
                     "properties": {
                         "resourceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName'))]",
                         "queueName": "certlc",
-                        "queueMessageTimeToLiveInSeconds": 604800
+                        "queueMessageTimeToLiveInSeconds": 5184000
                     },
                     "endpointType": "StorageQueue"
                 },
